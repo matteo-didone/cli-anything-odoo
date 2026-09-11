@@ -99,9 +99,34 @@ def build_domain(filters=None, domain=None):
     return result
 
 
-def build_values(values=None, pairs=None):
-    """--values JSON merged with repeated --set field=value."""
+def read_values_file(path):
+    """Read a JSON object of values from a file, or from stdin when path is '-'.
+
+    Keeps secrets out of argv: anything passed as --set lands in the process
+    command line and is visible to `ps` for as long as the call runs.
+    """
+    import sys
+    if path == "-":
+        raw = sys.stdin.read()
+    else:
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                raw = fh.read()
+        except OSError as exc:
+            raise OdooError(f"cannot read values file: {exc}") from exc
+    if not raw.strip():
+        raise OdooError("no values on stdin." if path == "-" else f"{path} is empty.")
+    parsed = parse_literal(raw.strip(), "values")
+    if not isinstance(parsed, dict):
+        raise OdooError('the values file must hold an object, e.g. {"name": "Acme"}')
+    return parsed
+
+
+def build_values(values=None, pairs=None, values_file=None):
+    """--values JSON, --values-file/stdin, and repeated --set, merged in that order."""
     out = {}
+    if values_file:
+        out.update(read_values_file(values_file))
     if values:
         parsed = parse_literal(values, "values")
         if not isinstance(parsed, dict):

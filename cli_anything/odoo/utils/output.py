@@ -9,6 +9,28 @@ import json
 import click
 
 
+# Field names whose values must never be echoed back to a terminal or a log.
+SENSITIVE = ("password", "passwd", "api_key", "apikey", "token", "secret",
+             "private_key", "otp")
+
+
+def _is_sensitive(name):
+    return any(marker in str(name).lower() for marker in SENSITIVE)
+
+
+def redact(value):
+    """Replace sensitive values in anything about to be printed.
+
+    The --verbose / --dry-run trace prints the RPC call verbatim; without this,
+    rehearsing a password change would put the new password on screen.
+    """
+    if isinstance(value, dict):
+        return {k: ("***" if _is_sensitive(k) else redact(v)) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [redact(v) for v in value]
+    return value
+
+
 def cell(value, width=0):
     if value is None or value is False:
         text = ""

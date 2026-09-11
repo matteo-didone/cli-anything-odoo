@@ -182,6 +182,10 @@ cli-anything-odoo --dry-run record write res.partner 42 --set phone=0431123456
 # actually do it (non-interactive requires --yes)
 cli-anything-odoo -y record write res.partner 42 --set phone=0431123456
 
+# values that must not show up in `ps`: pipe them in
+printf '{"password":"%s"}' "$NEW" | \
+    cli-anything-odoo -y record write res.users 41 --values-file -
+
 # call any model method
 cli-anything-odoo --json record call sale.order action_confirm --args '[[15]]' -y
 ```
@@ -210,4 +214,8 @@ cli-anything-odoo --json db list
   set correctly for you.
 - **Module install/upgrade runs on a live server** and reloads the registry.
   Treat it as a maintenance operation, not a query.
+- **Never put a secret in `--set`.** It is visible in `ps` while the call runs.
+  Use `--values-file -` and pipe the JSON in. Sensitive field names are redacted
+  as `***` in traces and output, so `--dry-run` on a password change is safe to
+  show on screen.
 - `db drop` and `module uninstall` destroy data and cannot be undone.

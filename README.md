@@ -109,6 +109,21 @@ cli-anything-odoo --dry-run record write res.partner 42 --set phone=0431123456
 cli-anything-odoo -y       record write res.partner 42 --set phone=0431123456
 ```
 
+### Values that must not appear in `ps`
+
+Anything passed with `--set` lands in the process command line, where other
+users on the machine can read it for as long as the call runs. For secrets,
+pipe the values in instead:
+
+```bash
+printf '{"password":"%s"}' "$NEW" | \
+  cli-anything-odoo -y record write res.users 41 --values-file -
+```
+
+Sensitive field names — `password`, `api_key`, `token`, `secret` and friends —
+are redacted as `***` in `--verbose` and `--dry-run` traces and in the command's
+own output, so rehearsing a password change does not print the password.
+
 ## For agents
 
 `--json` gives `{"ok": true, "result": ...}` or `{"ok": false, "error": "..."}`,

@@ -185,6 +185,26 @@ class TestDomainAndValues:
         with pytest.raises(OdooError):
             build_values(None, ["broken"])
 
+    def test_values_from_file(self, tmp_path):
+        f = tmp_path / "v.json"
+        f.write_text('{"password": "s3cr3t"}', encoding="utf-8")
+        assert build_values(values_file=str(f)) == {"password": "s3cr3t"}
+
+    def test_values_file_must_be_an_object(self, tmp_path):
+        f = tmp_path / "v.json"
+        f.write_text('[1,2]', encoding="utf-8")
+        with pytest.raises(OdooError, match="object"):
+            build_values(values_file=str(f))
+
+    def test_values_file_missing_raises(self):
+        with pytest.raises(OdooError, match="cannot read"):
+            build_values(values_file="/nope/absent.json")
+
+    def test_set_overrides_values_file(self, tmp_path):
+        f = tmp_path / "v.json"
+        f.write_text('{"a": 1, "b": 2}', encoding="utf-8")
+        assert build_values(pairs=["b=9"], values_file=str(f)) == {"a": 1, "b": 9}
+
     def test_parse_ids(self):
         assert parse_ids("1,2 3") == [1, 2, 3]
         with pytest.raises(OdooError):
@@ -216,6 +236,18 @@ class TestRendering:
         text = output.render_csv([{"id": 1, "name": "Acme"}], ["id", "name"])
         assert text.splitlines()[0] == "id,name"
         assert text.splitlines()[1] == "1,Acme"
+
+    def test_redacts_sensitive_fields(self):
+        assert output.redact({"password": "s3cr3t", "name": "Acme"}) == {
+            "password": "***", "name": "Acme"}
+
+    @pytest.mark.parametrize("field", ["password", "new_password", "api_key",
+                                       "x_token", "client_secret", "otp"])
+    def test_redaction_covers_the_usual_names(self, field):
+        assert output.redact({field: "leak"})[field] == "***"
+
+    def test_redaction_reaches_nested_values(self):
+        assert output.redact([[41], {"password": "s3cr3t"}]) == [[41], {"password": "***"}]
 
     def test_empty_table(self):
         assert output.render_table([], ["id"]) == "(no records)"
@@ -543,6 +575,20 @@ class TestCliLayer:
         assert "read-only" in result.output
         assert rpc.calls == []
 
+    def test_dry_run_never_echoes_a_password(self, monkeypatch, session_path):
+        """Rehearsing a password change must not put it on screen."""
+        from cli_anything.odoo import odoo_cli
+        rpc = FakeRPC()
+        monkeypatch.setattr(odoo_cli, "build_client", lambda **kw: _configured(rpc, kw))
+        result = CliRunner().invoke(
+            odoo_cli.cli,
+            ["--session", session_path, "--dry-run", "-y", "record", "write",
+             "res.users", "41", "--values-file", "-"],
+            input='{"password": "s3cr3t"}')
+        assert result.exit_code == 0
+        assert "s3cr3t" not in result.output
+        assert "***" in result.output
+
     def test_dry_run_performs_no_write(self, monkeypatch, session_path):
         rpc = FakeRPC()
         result, rpc = run_cli(["--dry-run", "record", "write", "res.partner", "1",
@@ -583,6 +629,18 @@ class TestCliLayer:
                 monkeypatch, session_path)
         with open(session_path, encoding="utf-8") as fh:
             assert json.load(fh)["selection"]["ids"] == [1, 2]
+
+    def test_values_from_stdin_keep_the_secret_out_of_argv(self, monkeypatch, session_path):
+        """The whole point: nothing sensitive on the command line."""
+        from cli_anything.odoo import odoo_cli
+        rpc = FakeRPC()
+        monkeypatch.setattr(odoo_cli, "build_client", lambda **kw: _configured(rpc, kw))
+        argv = ["--session", session_path, "-y", "record", "write", "res.users", "41",
+                "--values-file", "-"]
+        result = CliRunner().invoke(odoo_cli.cli, argv, input='{"password": "s3cr3t"}')
+        assert result.exit_code == 0
+        assert rpc.last[2] == [[41], {"password": "s3cr3t"}]
+        assert "s3cr3t" not in " ".join(argv)
 
     def test_dry_run_does_not_touch_the_session_file(self, monkeypatch, session_path):
         run_cli(["--dry-run", "record", "search", "res.partner"],

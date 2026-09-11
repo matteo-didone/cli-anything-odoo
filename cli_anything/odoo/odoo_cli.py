@@ -21,7 +21,7 @@ from .core import records as rec_mod
 from .core.connection import build_client
 from .core.session import get_session, reset_session
 from .utils.domain import build_values, parse_ids, split_list, parse_literal
-from .utils.output import emit, emit_error
+from .utils.output import emit, emit_error, redact
 from .utils.rpc import OdooError
 
 _repl_mode = False
@@ -66,7 +66,8 @@ def get_client(ctx, need_auth=True):
         tag = "dry-run" if opts.get("dry_run") else "rpc"
 
         def tracer(model, method, args, kwargs):
-            click.echo(f"[{tag}] {model}.{method}(*{args!r}, **{kwargs!r})", err=True)
+            click.echo(f"[{tag}] {model}.{method}"
+                       f"(*{redact(args)!r}, **{redact(kwargs)!r})", err=True)
 
     client = build_client(
         profile=opts.get("profile"), config=opts.get("config"), url=opts.get("url"),
@@ -393,19 +394,21 @@ def record_group_cmd(ctx, model, groupby, fields, filters, domain, limit, offset
 @record_group.command("create")
 @click.argument("model")
 @click.option("--values", help="JSON object of field values")
+@click.option("--values-file", help="Read values from a JSON file, or '-' for stdin "
+                                    "(keeps secrets out of the command line)")
 @click.option("--set", "pairs", multiple=True, help="field=value, repeatable")
 @click.option("-c", "--context")
 @json_option
 @click.pass_context
 @handle_errors
-def record_create(ctx, model, values, pairs, context, cmd_json):
+def record_create(ctx, model, values, values_file, pairs, context, cmd_json):
     """Create one record."""
-    payload = build_values(values, pairs)
+    payload = build_values(values, pairs, values_file)
     client = get_client(ctx)
     if not guard_write(ctx, f"Create a {model} record?"):
         raise OdooError("cancelled.")
     new_id = rec_mod.create(client, model, payload, context_of(ctx, context))
-    emit({"model": model, "created": new_id, "values": payload,
+    emit({"model": model, "created": new_id, "values": redact(payload),
           "dry_run": bool(ctx.obj["dry_run"])},
          use_json(ctx, cmd_json), ctx.obj["fmt"], width=ctx.obj["width"])
 
@@ -414,21 +417,23 @@ def record_create(ctx, model, values, pairs, context, cmd_json):
 @click.argument("model")
 @click.argument("ids")
 @click.option("--values")
+@click.option("--values-file", help="Read values from a JSON file, or '-' for stdin "
+                                    "(keeps secrets out of the command line)")
 @click.option("--set", "pairs", multiple=True)
 @click.option("-c", "--context")
 @json_option
 @click.pass_context
 @handle_errors
-def record_write(ctx, model, ids, values, pairs, context, cmd_json):
+def record_write(ctx, model, ids, values, values_file, pairs, context, cmd_json):
     """Update records. IDS may be '@'."""
-    payload = build_values(values, pairs)
+    payload = build_values(values, pairs, values_file)
     wanted = resolve_ids(ctx, model, ids)
     client = get_client(ctx)
     if not guard_write(ctx, f"Write {', '.join(payload)} on {len(wanted)} {model} record(s)?"):
         raise OdooError("cancelled.")
     rec_mod.write(client, model, ",".join(str(i) for i in wanted), payload,
                   context_of(ctx, context))
-    emit({"model": model, "written": wanted, "values": payload,
+    emit({"model": model, "written": wanted, "values": redact(payload),
           "dry_run": bool(ctx.obj["dry_run"])},
          use_json(ctx, cmd_json), ctx.obj["fmt"], width=ctx.obj["width"])
 

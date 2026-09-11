@@ -278,3 +278,20 @@ the fixture in a different state than they found it. They are exercised by
 hand against a throwaway instance. If the maintainers want them automated,
 the natural shape is a separate, slower suite with its own disposable
 container per test.
+
+
+### Run of 2026-09-11 — after adding `--values-file` and redaction
+
+**123 passed** (109 → 123: +9 unit for `--values-file`, +4 for redaction), same
+live `odoo:18.0` backend.
+
+Two changes, both aimed at one real operation — resetting a user's password:
+
+1. `--values-file PATH` (or `-` for stdin) on `create` and `write`. Values passed
+   with `--set` land in the process command line, where `ps` exposes them for the
+   duration of the call. Piping them in closes that window.
+2. Sensitive field names (`password`, `api_key`, `token`, `secret`, `otp`…) are
+   redacted to `***` in `--verbose` / `--dry-run` traces and in command output.
+   Found while testing the first change: rehearsing a password write with
+   `--dry-run` printed the new password to the terminal — the one place it
+   should never appear. `test_dry_run_never_echoes_a_password` pins it.
