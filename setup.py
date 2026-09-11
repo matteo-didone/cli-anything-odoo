@@ -9,7 +9,7 @@ setup(
     description="Agent-native CLI for Odoo 18: ORM, modules and databases over XML-RPC",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/OWNER/cli-anything-odoo",
+    url="https://github.com/matteo-didone/cli-anything-odoo",
     license="MIT",
     packages=find_namespace_packages(include=["cli_anything.*"]),
     include_package_data=True,
